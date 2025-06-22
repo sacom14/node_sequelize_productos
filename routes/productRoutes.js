@@ -1,23 +1,62 @@
 import express from 'express';
 import { Product } from '../models/product.js';  //con sequelize
-// import redisClient from '../redis.js'; //con redis
+import redisClient from '../redis.js'; //con redis
 
 const router = express.Router();
 
+// GET únicamente con sequelize
+// router.get('/', async (req, res) => {
+//     try {
+//         const products = await Product.findAll();
+//         res.json(products);
+//     } catch (error) {
+//         console.error('Error fetching products:', error);
+//         res.status(500).json({ error: 'Internal Server Error' });
+//     }
+// });
+
 router.get('/', async (req, res) => {
+
     try {
+        const cachekey = 'products:all';
+        const cachedProducts = await redisClient.get(cachekey);
+
+        if (cachedProducts) {
+            console.log('Returning cached products');
+            return res.json(JSON.parse(cachedProducts));
+        }
+
         const products = await Product.findAll();
+        await redisClient.set(cachekey, JSON.stringify(products), {
+            EX: 1800
+        });
         res.json(products);
-    } catch (error) {
+    }
+    catch (error) {
         console.error('Error fetching products:', error);
         res.status(500).json({ error: 'Internal Server Error' });
     }
 });
 
+// POST únicamente con sequelize
+// router.post('/', async (req, res) => {
+//     const { name, description, price } = req.body;
+
+//     try {
+//         const product = await Product.create({ name, description, price });
+//         res.status(201).json(product);
+//     } catch (error) {
+//         console.error('Error creating product:', error);
+//         res.status(500).json({ error: 'Internal Server Error' });
+//     }
+// });
 router.post('/', async (req, res) => {
     const { name, description, price } = req.body;
 
     try {
+        // Eliminar caché antes de crear un nuevo producto
+        await redisClient.del('products:all'); 
+        // Creamos el nuevo producto
         const product = await Product.create({ name, description, price });
         res.status(201).json(product);
     } catch (error) {
